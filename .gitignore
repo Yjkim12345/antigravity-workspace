@@ -16,3 +16,5 @@ Desktop.ini
 .env
 *.key
 *.pem
+*credentials*.json
+token.json
