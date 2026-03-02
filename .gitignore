@@ -1,0 +1,18 @@
+# Ignore temporary/log files
+*.log
+tmp/
+temp/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Optional: Ignore environment/credentials if placed here by mistake
+.env
+*.key
+*.pem
