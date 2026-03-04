@@ -31,8 +31,21 @@ def get_placeholder(type_val, original_text):
 
 def process_rule_6_boilerplate(text):
     # Rule 6: Boilderplate Removal (Not saved to mapping as it's just deletion)
-    pattern = r'개인정보유출주의\s*제출자:.*?다운로드일시:\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}'
-    return re.sub(pattern, '[전자소송 식별메타데이터 삭제]', text)
+    
+    # 1. Header (Law firm info)
+    header_pattern = r'-\s*\d+/\d+\s*-\n서울 서초구 반포대로 138, \n3층\(서초동, 양진빌딩\)\n법무법인 다 옴\n전\s+화\s+\(02\)\s+523\s+8101\n팩\s+스\s+\(02\)\s+523\s+8102\n이메일 [a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+    text = re.sub(header_pattern, '', text)
+    
+    # 2. Footer (Court stamp & Meta)
+    # Matches strings like "서울중앙지법 2026가단31833  20260303 제출 원본과 상위 없음\n개인정보유출주의..."
+    footer_pattern = r'[가-힣]+지법.*?원본과 상위 없음\n개인정보유출주의\s*제출자:.*?다운로드일시:\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}'
+    text = re.sub(footer_pattern, '', text, flags=re.DOTALL)
+    
+    # 3. Fallback generic meta
+    generic_footer = r'개인정보유출주의\s*제출자:.*?다운로드일시:\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}'
+    text = re.sub(generic_footer, '', text, flags=re.DOTALL)
+    
+    return text
 
 def apply_format_redaction(text):
     redacted = text
@@ -86,9 +99,9 @@ def apply_format_redaction(text):
 
     return redacted
 
-def main():
-    input_dir = r"C:\Users\user\변환자료\스파헤움 항소심\extracted_text"
-    output_dir = r"C:\Users\user\변환자료\스파헤움 항소심\step1_output"
+def main(target_dir):
+    input_dir = os.path.join(target_dir, "extracted_text")
+    output_dir = os.path.join(target_dir, "step1_output")
     os.makedirs(output_dir, exist_ok=True)
     
     txt_files = glob.glob(os.path.join(input_dir, '*.txt'))
@@ -114,4 +127,6 @@ def main():
     print(f"Mapping table saved to {map_path}")
 
 if __name__ == '__main__':
-    main()
+    import sys
+    target_dir = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\user\변환자료\이경헌"
+    main(target_dir)

@@ -1,8 +1,9 @@
 import os
+import sys
 import glob
 import fitz  # PyMuPDF
 
-def extract_text_from_pdfs(input_dir, output_dir):
+def extract_text_from_pdfs(input_dir, output_dir, skip_cover=True, skip_toc=True):
     os.makedirs(output_dir, exist_ok=True)
     pdf_files = glob.glob(os.path.join(input_dir, '*.pdf'))
     
@@ -18,8 +19,18 @@ def extract_text_from_pdfs(input_dir, output_dir):
         try:
             doc = fitz.open(pdf_path)
             full_text = []
-            for page in doc:
-                full_text.append(page.get_text())
+            for j, page in enumerate(doc):
+                text = page.get_text()
+                # Skip cover (but not for evidence files starting with '갑')
+                if skip_cover and j == 0 and not filename.startswith("갑"):
+                    print(f"  - Skipping page {j+1} (Cover assumed)")
+                    continue
+                # Skip TOC if found in early pages
+                if skip_toc and j < 3 and any(word in text[:200].replace(" ", "") for word in ["목차", "차례"]):
+                    print(f"  - Skipping page {j+1} (TOC assumed)")
+                    continue
+                
+                full_text.append(text)
             doc.close()
             
             with open(txt_path, 'w', encoding='utf-8') as f:
@@ -28,6 +39,6 @@ def extract_text_from_pdfs(input_dir, output_dir):
             print(f"  -> Error processing {filename}: {e}")
 
 if __name__ == '__main__':
-    target_dir = r"C:\Users\user\변환자료\스파헤움 항소심"
+    target_dir = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\user\변환자료\이경헌"
     out_dir = os.path.join(target_dir, "extracted_text")
     extract_text_from_pdfs(target_dir, out_dir)
