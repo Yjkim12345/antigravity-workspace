@@ -1,78 +1,103 @@
 import os
 import glob
-import re
 import json
+import re
+import sys
+import google.generativeai as genai
 
-def extract_candidates(text):
-    candidates = set()
-    
-    # 1. 고유명사 뒤에 붙은 불필요한 조사 제거를 위한 유틸리티 함수
-    def clean_candidate(word):
-        word = word.strip()
-        # 자주 붙는 조사/어미 제거
-        suffixes = ['은', '는', '이', '가', '을', '를', '과', '와', '의', '에', '에게', '에서', '로', '으로', '부터', '께서', '조차', '마저', '까지', '로서', '로써', '며', '만']
-        for suffix in sorted(suffixes, key=len, reverse=True):
-            if word.endswith(suffix) and len(word) > len(suffix):
-                word = word[:-len(suffix)]
-                break
-        return word.strip()
-
-    # Heuristics based on keyword proximity for names
-    pattern_name = r'(?:원고|피고|소송대리인|신청인|담당변호사|변호사|수사관|고소인|사내이사|관리소장|소외|설비업자|대표이사|이사|감사|위원장|지배인)(?:의|가|는|은)?\s*:?\s*([가-힣]{2,4})(?:[\s\W]|$)'
-    for match in re.finditer(pattern_name, text):
-        name = match.group(1)
-        if len(name) >= 2 and "[" not in name:
-            candidates.add(clean_candidate(name))
+def setup_gemini():
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        try:
+            with open(r'c:\Users\user\.gemini\antigravity\mcp_config.json', 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                api_key = config.get("GEMINI_API_KEY")
+        except Exception:
+            pass
             
-    # Entities ending in specific suffixes that likely denote organizations/companies
-    pattern_corp = r'((?:사단법인|재단법인|주식회사|\(주\)|주\))\s*[가-힣A-Za-z0-9]+|[가-힣A-Za-z0-9]+\s*(?:주식회사|\(주\)|주\))|[가-힣A-Za-z0-9]+\s*관리단|[가-힣A-Za-z0-9]+\s*빌딩|‘[^’]+’\s*식당|[A-Za-z0-9_-]+\s*(?:Corp\.|Corp|corp\.|corp|Inc\.|Inc|inc\.|inc))'
-    for match in re.finditer(pattern_corp, text):
-        corp = match.group(1)
-        # filter out generic prefixes
-        if not any(corp.startswith(x) for x in ['가진 ', '각 ', '감사가 ', '감사는 ', '감사를 ', '거처 ', '검토하고 ', '것을 ', '결과 ', '결의로 ', '결의와 ', '경우 ', '경우로서 ', '고 ', '고용하는 ', '공유자는 ', '관련하여 ', '관리는 ', '관리단은 ', '관리위원회는 ', '관리인은 ', '관리인이 ', '구분소유자가 ', '구분소유자는 ', '구분소유자등은 ', '규약과 ', '규정이나 ', '그러나 ', '날을 ', '대리인 ', '대표권은 ', '등 ', '따라 ', '따른 ', '또는 ', '라 ', '로즈1', '및 ', '밖에 ', '받아 ', '밝혀 ', '별첨도는 ', '보고로서 ', '분을 ', '불구하고 ', '상가 ', '설립된 ', '소재지를 ', '소집하려면 ', '않아 ', '여 ', '연장자가 ', '외에는 ', '우 ', '우체국에 ', '위원장이 ', '위하여 ', '유자가 ', '의사록은 ', '의장은 ', '이상이 ', '이외에 ', '일부관리단은 ', '임시 ', '작성하여 ', '장 ', '장소에 ', '전자투표는 ', '점유자에게 ', '정기 ', '정하여 ', '제정하려는 ', '주의로 ', '직계존비속은 ', '집합건물이며 ', '출석하여 ', '폐지는 ', '피고 ', '하여 ', '하여금 ', '한 ', '합의하면 ', '항의 ', '행사는 ', '회계장부와 ', '후 ']):
-            candidates.add(clean_candidate(corp))
+    if not api_key:
+        print("Error: GEMINI_API_KEY not found in environment or mcp_config.json.")
+        print("Please set it before running this script.")
+        sys.exit(1)
         
-    # Entities that look like government or agency names based on suffix
-    pattern_gov = r'\b([가-힣]+법원|[가-힣]+부장관|[가-힣]+부|[가-힣]+환경청|[가-힣]+구청장|[가-힣]+구청|[가-힣]+광역시|[가-힣]+특별시|[가-힣]+시장|[가-힣]{2,4}시|[가-힣]{2,4}구|[가-힣]{2,4}동)\b'
-    for match in re.finditer(pattern_gov, text):
-        gov = match.group(1)
-        if len(gov) > 2:
-            candidates.add(clean_candidate(gov))
+    genai.configure(api_key=api_key)
+    # Using gemini-2.5-flash as the latest available model
+    return genai.GenerativeModel('gemini-2.5-flash')
 
-    # Law firms
-    pattern_lawfirm = r'\b(법무법인\s*\(유한\)\s*[가-힣]+|법무법인\s*[가-힣]+|정부법무공단)\b'
-    for match in re.finditer(pattern_lawfirm, text):
-        lawfirm = match.group(1)
-        candidates.add(clean_candidate(lawfirm))
-        
-    # Hardcoded additions for specific user requests if missed by heuristics
-    # The user specifically mentioned names like "주영운", "최성호"
-    for explicit_name in ["주영운", "최성호"]:
-        if explicit_name in text:
-            candidates.add(explicit_name)
+def extract_candidates_with_llm(model, text):
+    prompt = """
+    당신은 법률 문서의 가명처리를 돕는 전문가입니다.
+    아래 텍스트는 1차 가명처리(정규식을 통해 주민번호, 전화번호 등이 [기호]로 변경된 상태)가 완료된 법률 문서입니다.
+    이 문서를 읽고, 문맥을 파악하여 **아직 가명처리가 되지 않은 고유명사(추가 가명처리가 필요한 단어)**만 찾아내어 JSON 배열(List) 형태로 반환해주세요.
+
+    [추출 대상 및 규칙]
+    1. **인명**: 원고, 피고, 대리인, 관련자 등의 순수 이름만 추출 (예: "홍길동")
+       - 직함이나 조사("변호사", "원고", "은", "는", "이", "가")는 제외하고 순수 이름표현만 뽑을 것.
+    2. **법인/단체명**: 문맥상 등장하는 주식회사, 재단, 병원, 식당, 상가 건물명 등 특정 단체나 사업체 이름 (예: "스파헤움", "더 뭉티기", "로즈1타워")
+       - "주식회사", "(주)", "사단법인" 같은 일반적인 접두/접미어는 빼고 고유명칭만 추출할 것.
+       - "법무법인" 자체는 일반명사이므로 빼되 뒤에 붙은 고유명칭(예: "태평양")만 추출할 것.
+    3. **지역/장소명**: 사건과 관련된 특정 동, 구, 건물명 등의 고유 지명 (시도 단위 말고 세부 지명)
+    4. **제외 대상**: 
+       - 기호 처리된 단어들 (예: [주소 1], [전화번호 1], [기호] 등 대괄호로 묶인 것은 절대 추출 금지)
+       - 일상적인 일반명사 ("제출물", "식당", "법원", "계약서" 등)
+       - 조사가 붙어있는 단어 (조사를 떼고 원형만 추출할 것)
+       - **법령, 법안, 규칙 명칭** (예: "소득세법", "상속세 및 증여세법", "기획재정부령", "민법" 등은 절대 추출 금지)
+
+    # 출력 형식:
+    반드시 순수 JSON 배열만 출력하세요. 마크다운 기호(```json)나 부연 설명은 절대 금지합니다.
+    예시: ["홍길동", "스파헤움", "더 뭉티기", "강남구", "로즈1타워"]
+    """
     
-    return list(candidates)
+    try:
+        response = model.generate_content(prompt + "\n\n[문서 내용 시작]\n" + text + "\n[문서 내용 끝]")
+        llm_output = response.text.strip()
+        
+        # Clean up markdown styling if the LLM hallucinated it despite instructions
+        if llm_output.startswith("```json"):
+            llm_output = llm_output[7:]
+        if llm_output.startswith("```"):
+            llm_output = llm_output[3:]
+        if llm_output.endswith("```"):
+            llm_output = llm_output[:-3]
+        llm_output = llm_output.strip()
+            
+        return json.loads(llm_output)
+    except json.JSONDecodeError as e:
+        print(f"  -> JSON Parsing Error from LLM response: {e}")
+        print(f"  -> Raw response: {response.text}")
+        return []
+    except Exception as e:
+        print(f"  -> Gemini API Error: {e}")
+        return []
 
 def main(target_dir):
     input_dir = os.path.join(target_dir, "step1_output")
     output_path = os.path.join(target_dir, "candidates.json")
     
     txt_files = glob.glob(os.path.join(input_dir, '*.txt'))
-    print(f"Extracting candidates from {len(txt_files)} files...")
+    if not txt_files:
+        print(f"No text files found in {input_dir}")
+        return
+        
+    print(f"Extracting candidates from {len(txt_files)} files using LLM API...")
     
+    model = setup_gemini()
     all_candidates = set()
     
     for txt_path in txt_files:
+        print(f"Processing: {os.path.basename(txt_path)}")
         with open(txt_path, 'r', encoding='utf-8') as f:
             text = f.read()
             
-        file_candidates = extract_candidates(text)
+        # Due to context limits, we might need to chunk large files in production.
+        # For typical legal docs (10-20 pages), gemini-1.5-pro can handle it easily.
+        file_candidates = extract_candidates_with_llm(model, text)
         all_candidates.update(file_candidates)
         
-    # Filters to remove overly generic words that were accidentally picked up or already anonymized placeholders
+    # Final cleanup to remove any accidental brackets or extremely short terms
     filtered_candidates = sorted([
-        c for c in all_candidates 
-        if c and "[" not in c and "]" not in c and len(c) > 1 and "주식회사" != c and "법무법인" != c
+        c.strip() for c in all_candidates 
+        if c and type(c) == str and "[" not in c and "]" not in c and len(c.strip()) > 1
     ])
     
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -82,6 +107,5 @@ def main(target_dir):
     print(f"Candidates saved to {output_path}")
 
 if __name__ == '__main__':
-    import sys
     target_dir = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\user\변환자료\이경헌"
     main(target_dir)

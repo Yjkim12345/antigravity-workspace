@@ -2,18 +2,11 @@ import os
 import glob
 import re
 import json
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 # Global Mapping Table for Step 1
 mapping_table = OrderedDict()
-counters = {
-    "주민번호": 1,
-    "전화번호": 1,
-    "주소": 1,
-    "상세주소": 1,
-    "사건번호": 1,
-    "이메일": 1,
-}
+counters = defaultdict(lambda: 1)
 
 def get_placeholder(type_val, original_text):
     global mapping_table, counters
@@ -29,73 +22,38 @@ def get_placeholder(type_val, original_text):
     mapping_table[placeholder] = original_text
     return placeholder
 
-def process_rule_6_boilerplate(text):
-    # Rule 6: Boilderplate Removal (Not saved to mapping as it's just deletion)
-    
-    # 1. Header (Law firm info)
-    header_pattern = r'-\s*\d+/\d+\s*-\n서울 서초구 반포대로 138, \n3층\(서초동, 양진빌딩\)\n법무법인 다 옴\n전\s+화\s+\(02\)\s+523\s+8101\n팩\s+스\s+\(02\)\s+523\s+8102\n이메일 [a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
-    text = re.sub(header_pattern, '', text)
-    
-    # 2. Footer (Court stamp & Meta)
-    # Matches strings like "서울중앙지법 2026가단31833  20260303 제출 원본과 상위 없음\n개인정보유출주의..."
-    footer_pattern = r'[가-힣]+지법.*?원본과 상위 없음\n개인정보유출주의\s*제출자:.*?다운로드일시:\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}'
-    text = re.sub(footer_pattern, '', text, flags=re.DOTALL)
-    
-    # 3. Fallback generic meta
-    generic_footer = r'개인정보유출주의\s*제출자:.*?다운로드일시:\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}'
-    text = re.sub(generic_footer, '', text, flags=re.DOTALL)
-    
-    return text
+def load_rules():
+    rules_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "anonymization_rules.json")
+    if not os.path.exists(rules_path):
+        print(f"Error: {rules_path} not found.")
+        return {"deletions": [], "replacements": []}
+    with open(rules_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-def apply_format_redaction(text):
+def apply_format_redaction(text, rules):
     redacted = text
     
-    # Rule 6: Boilerplate
-    redacted = process_rule_6_boilerplate(redacted)
-    
-    # 1. 주민등록번호
-    pattern_id = r'\b(\d{6}[-\s]*[1-4]\d{6})\b'
-    for match in re.finditer(pattern_id, redacted):
-        original = match.group(1)
-        ph = get_placeholder("주민번호", original)
-        redacted = redacted.replace(original, ph)
+    # 1. Apply Deletions (Boilerplates)
+    for del_pattern in rules.get("deletions", []):
+        redacted = re.sub(del_pattern, '', redacted, flags=re.DOTALL)
         
-    # 2. 전화번호/휴대폰번호
-    pattern_phone = r'\b(010[-\s]?\d{3,4}[-\s]?\d{4}|0[2-9]{1,2}[-\s]?\d{3,4}[-\s]?\d{4})\b'
-    for match in re.finditer(pattern_phone, redacted):
-        original = match.group(1)
-        ph = get_placeholder("전화번호", original)
-        redacted = redacted.replace(original, ph)
+    # 2. Apply Replacements
+    for rule in rules.get("replacements", []):
+        tag = rule.get("tag")
         
-    # 3. 사건번호
-    pattern_case = r'\b(\d{2,4}[가-힣]{1,2}\d{3,6})\b'
-    for match in re.finditer(pattern_case, redacted):
-        original = match.group(1)
-        ph = get_placeholder("사건번호", original)
-        redacted = redacted.replace(original, ph)
-        
-    # 4. 이메일
-    pattern_email = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
-    for match in re.finditer(pattern_email, redacted):
-        original = match.group(0)
-        ph = get_placeholder("이메일", original)
-        redacted = redacted.replace(original, ph)
-
-    # 5. 주소
-    pattern_address = r'(서울(?:\s*특별시)?\s+[가-힣]+구\s+[가-힣0-9]+(?:로|길)\s+[0-9-]+(?:,\s*지하\d+층\s*\d+호|\s*\d+~\d+층)?(?:\([^)]+\))?)'
-    for match in re.finditer(pattern_address, redacted):
-        original = match.group(1)
-        ph = get_placeholder("주소", original)
-        redacted = redacted.replace(original, ph)
-        
-    # Additional specific addresses seen (optional, but good for completeness of Phase 1)
-    addr_extras = [
-        "언주로 311", "반포대로26길 70", "테헤란로108길 12", "한강로3가 40-976"
-    ]
-    for ext in addr_extras:
-        if ext in redacted:
-            ph = get_placeholder("상세주소", ext)
-            redacted = redacted.replace(ext, ph)
+        # Apply regex rules
+        for pattern in rule.get("regex", []):
+            # Using re.finditer to avoid overlapping matches infinite loops
+            for match in re.finditer(pattern, redacted):
+                original = match.group(1) if match.groups() else match.group(0)
+                ph = get_placeholder(tag, original)
+                redacted = redacted.replace(original, ph)
+                
+        # Apply literal string rules
+        for literal in rule.get("literals", []):
+            if literal in redacted:
+                ph = get_placeholder(tag, literal)
+                redacted = redacted.replace(literal, ph)
 
     return redacted
 
@@ -107,12 +65,14 @@ def main(target_dir):
     txt_files = glob.glob(os.path.join(input_dir, '*.txt'))
     print(f"Phase 1 Redacting {len(txt_files)} files...")
     
+    rules = load_rules()
+    
     for txt_path in txt_files:
         filename = os.path.basename(txt_path)
         with open(txt_path, 'r', encoding='utf-8') as f:
             text = f.read()
             
-        redacted_text = apply_format_redaction(text)
+        redacted_text = apply_format_redaction(text, rules)
         
         out_path = os.path.join(output_dir, filename.replace('.txt', '_step1.txt'))
         with open(out_path, 'w', encoding='utf-8') as f:
