@@ -37,24 +37,24 @@ class KnowledgeCard(BaseModel):
     detailed_text: str = Field(description="이 한줄법리를 도출해낸 원본 판결문/문서의 원문 발췌 단락 (상세 내용)")
 
 class AtomizationResult(BaseModel):
-    cards: list[KnowledgeCard] = Field(description="입력된 문서에서 추출된 독립적인 법리 쟁점 카드 목록 (보통 2~4개)")
+    cards: list[KnowledgeCard] = Field(description="입력된 문서에서 추출된 핵심 법리 카드 목록 (문서 길이가 짧다면 반드시 1개, 아주 길고 복합적인 경우에만 최대 2~3개 추출. 과도한 쪼개기 금지.)")
 
 
 SYSTEM_PROMPT = """당신은 대한민국의 최고참 파트너 변호사이자 제텔카스텐(Zettelkasten) 지식 아키텍트입니다.
 
 [지시사항]
-사용자가 대법원 판례 전문이나 판결 요지를 제공하면, 이를 분석하여 '독립적으로 인용 및 재활용 가능한 최소 단위의 추상화된 법리'로 쪼개십시오. 절대 하나의 글 덩어리로 뭉뚱그려 요약하지 마십시오.
+사용자가 판례나 법리를 제공하면, 이를 분석하여 '독립적으로 재활용 가능한 추상화된 법리'로 정리하십시오.
 
-[원자화 3대 원칙]
-1. '1 쟁점 = 1 카드'의 원칙에 따라, 판례에 혼재된 여러 쟁점들을 각각 분할하십시오.
-2. 사안의 구체적 사실관계와 추상화된 법리를 분리하되, 지식 카드의 제목은 반드시 '추상적 법률 쟁점' 형태로 작성하십시오.
-3. '한줄법리'에는 결론에 해당하는 압축된 명제를, '상세내용'에는 그 결론을 뒷받침하는 원문 발췌를 담으십시오.
+[원자화 3대 원칙 및 💥제한사항💥]
+1. (중요) 과도한 쪼개기(Over-atomization)를 엄격히 금지합니다. 비슷한 맥락이나 같은 판례 안에서 도출되는 연관된 법리들은 억지로 분리하지 말고, 가장 핵심이 되는 1개의 카드로 통합하여 굵직하게 뽑아내십시오.
+2. 입력된 텍스트가 A4 반 페이지 이하의 짧은 판결요지나 단일 단락이라면, 무조건 '단 1개의 지식 카드'만 생성하십시오.
+3. 사안의 구체적 사실관계와 추상화된 법리를 분리하되, '한줄법리'에는 결론을, '상세내용'에는 그 결론을 뒷받침하는 원문 전체를 풍부하게 담으십시오.
 """
 
 def atomize_text(text: str) -> AtomizationResult:
     print(f"[*] Analyzing and atomizing text with Gemini (Length: {len(text)} chars)...")
     response = client.models.generate_content(
-        model='gemini-2.5-pro',
+        model='gemini-2.5-flash',
         contents=text,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
