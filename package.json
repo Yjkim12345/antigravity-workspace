@@ -1,0 +1,13 @@
+{
+    "name": "antigravity_automation",
+    "version": "1.0.0",
+    "type": "module",
+    "dependencies": {
+        "@google/genai": "^1.44.0",
+        "@notionhq/client": "^5.11.1",
+        "chokidar": "^5.0.0",
+        "clipboardy": "^5.3.1",
+        "node-global-key-listener": "^0.3.0",
+        "node-notifier": "^10.0.1"
+    }
+}

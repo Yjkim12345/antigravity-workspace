@@ -10,14 +10,38 @@ from datetime import datetime
 # 0. CONFIGURATION
 # ==========================================
 
-# TODO: Load from mcp_config.json or ENV
-with open(r"c:\Users\user\.gemini\antigravity\mcp_config.json", "r") as f:
-    config = json.load(f)
-    os.environ["GEMINI_API_KEY"] = config["GEMINI_API_KEY"]
-    # NOTION_API_KEY is buried in the headers string
-    headers_str = config["mcpServers"]["notion-mcp-server"]["env"]["OPENAPI_MCP_HEADERS"]
-    headers_dict = json.loads(headers_str)
-    NOTION_API_KEY = headers_dict["Authorization"].replace("Bearer ", "")
+home_dir = os.path.expanduser("~")
+config_path1 = os.path.join(home_dir, '.gemini', 'antigravity', 'mcp_settings.json')
+config_path2 = os.path.join(home_dir, '.gemini', 'antigravity', 'mcp_config.json')
+
+config_path = config_path1 if os.path.exists(config_path1) else (config_path2 if os.path.exists(config_path2) else None)
+
+if not config_path:
+    print(f"Config file not found. Checked: \n{config_path1}\n{config_path2}")
+    sys.exit(1)
+
+with open(config_path, "r", encoding="utf-8") as f:
+    try:
+        config = json.load(f)
+    except json.JSONDecodeError:
+        config = {}
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+NOTION_API_KEY = ""
+
+if "mcpServers" in config and "notion-mcp-server" in config["mcpServers"]:
+    GEMINI_API_KEY = config.get("GEMINI_API_KEY", GEMINI_API_KEY)
+    try:
+        headers_str = config["mcpServers"]["notion-mcp-server"]["env"].get("OPENAPI_MCP_HEADERS", "{}")
+        headers_dict = json.loads(headers_str)
+        NOTION_API_KEY = headers_dict.get("Authorization", "").replace("Bearer ", "")
+    except Exception as e:
+        print(f"Failed to parse Notion headers: {e}")
+elif config.get("notionApiKey"):
+    NOTION_API_KEY = config.get("notionApiKey")
+    GEMINI_API_KEY = config.get("geminiApiKey", GEMINI_API_KEY)
+
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
 NOTION_DB_ID = "31b063a28bb180b1a135ebc3f6813a3c"
 
@@ -54,7 +78,7 @@ SYSTEM_PROMPT = """당신은 대한민국의 최고참 파트너 변호사이자
 def atomize_text(text: str) -> AtomizationResult:
     print(f"[*] Analyzing and atomizing text with Gemini (Length: {len(text)} chars)...")
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.1-pro-preview',
         contents=text,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
