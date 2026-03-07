@@ -18,4 +18,6 @@ Desktop.ini
 *.pem
 *credentials*.json
 token.json
-node_modules/ 
+node_modules/
+antigravity_env/
+.venv/

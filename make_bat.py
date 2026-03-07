@@ -23,5 +23,6 @@ if %SIZE% GTR 5 (
 )
 """
 
-with open(r'c:\Users\user\Desktop\새법리_입력기.bat', 'w', encoding='cp949') as f:
+target_bat = os.path.join(os.environ["USERPROFILE"], "OneDrive", "Desktop", "새법리_입력기.bat")
+with open(target_bat, 'w', encoding='cp949') as f:
     f.write(bat_content)

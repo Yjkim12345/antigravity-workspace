@@ -5,8 +5,8 @@ from winotify import Notification, audio
 import threading
 import sys
 
-# Import the existing atomize function, models, and notion uploader
-from knowledge_atomizer import atomize_text, AtomizationResult, create_notion_page
+# Import the existing atomize function, models, and supabase uploader
+from knowledge_atomizer import atomize_text, AtomizationResult, insert_to_supabase
 
 class AtomizeWorker(threading.Thread):
     def __init__(self, text):
@@ -17,8 +17,8 @@ class AtomizeWorker(threading.Thread):
         try:
             # Show processing toast
             Notification(app_id="Antigravity Automation",
-                         title="노션 자동업로드 동작 중",
-                         msg="Gemini AI가 원자화를 진행하고 있습니다...",
+                         title="Supabase AI 적재 동작 중",
+                         msg="Gemini AI가 원자화 및 임베딩을 진행하고 있습니다...",
                          duration="short").show()
             
             # Run atomization
@@ -26,23 +26,23 @@ class AtomizeWorker(threading.Thread):
             
             card_count = len(result.cards) if result and hasattr(result, 'cards') else 0
             
-            # Upload to notion
+            # Upload to Supabase
             if card_count > 0:
                 for card in result.cards:
-                    create_notion_page(card)
+                    insert_to_supabase(card)
                     
-            msg = f"노션 '법리모음'에 {card_count}개의 카드가 추가되었습니다." if card_count > 0 else "추출된 지식 카드가 없습니다."
+            msg = f"Supabase 'Legal_DataBase'에 {card_count}개의 카드가 추가되었습니다." if card_count > 0 else "추출된 지식 카드가 없습니다."
             
             # Show success toast
             Notification(app_id="Antigravity Automation",
-                         title="노션 자동업로드 완료",
+                         title="Supabase AI 적재 완료",
                          msg=msg,
                          duration="short").show()
             
         except Exception as e:
             # Show error toast
             Notification(app_id="Antigravity Automation",
-                         title="노션 자동업로드 오류",
+                         title="Supabase AI 적재 오류",
                          msg=f"오류가 발생했습니다: {str(e)}",
                          duration="long").show()
             print(f"Error during atomization: {e}")
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     print(" [안티그래비티 Zero-Click 자동화] 단축키 스크립트 가동 (pynput) ")
     print("==========================================================")
     print(f"엘박스나 웹 등에서 텍스트를 복사(Ctrl+C)한 후,")
-    print(f"'{HOTKEY}' 단축키를 누르면 자동으로 노션에 전송됩니다.")
+    print(f"'{HOTKEY}' 단축키를 누르면 자동으로 Supabase DB에 전송됩니다.")
     print("종료하려면 이 창을 닫거나 프로세스를 강제종료하세요.")
     print("==========================================================")
     

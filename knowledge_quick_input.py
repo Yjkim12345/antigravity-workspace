@@ -5,21 +5,23 @@ from tkinter import Tk, Text, BOTH, END
 from winotify import Notification
 import time
 
-sys.path.append(r"C:\Users\SAMSUNG\.gemini\antigravity\sync_workspace")
-from knowledge_atomizer import atomize_text, create_notion_page
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+
+from knowledge_atomizer import atomize_text, insert_to_supabase
 
 def bg_process_and_upload(content, root):
     Notification(app_id="Antigravity Notepad",
                  title="메모 작성 완료",
-                 msg="작성하신 메모를 노션으로 전송합니다...",
+                 msg="작성하신 메모를 Supabase DB로 전송합니다...",
                  duration="short").show()
     try:
         result = atomize_text(content)
         card_count = len(result.cards) if result and hasattr(result, 'cards') else 0
         if card_count > 0:
             for card in result.cards:
-                create_notion_page(card)
-        msg = f"메모가 분석되어 {card_count}개의 카드로 노션에 저장되었습니다." if card_count > 0 else "추출된 지식 카드가 없습니다."
+                insert_to_supabase(card)
+        msg = f"메모가 분석되어 {card_count}개의 카드로 DB에 저장되었습니다." if card_count > 0 else "추출된 지식 카드가 없습니다."
         Notification(app_id="Antigravity Notepad",
                      title="업로드 완료",
                      msg=msg,
